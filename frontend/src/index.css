@@ -1,0 +1,81 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-cream-50 text-earth-900 antialiased;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  }
+
+  h1, h2, h3, h4 {
+    @apply font-serif tracking-tight;
+  }
+}
+
+@layer components {
+  .hero-gradient {
+    background: linear-gradient(135deg, #353e2f 0%, #5f6f4e 40%, #94a37d 100%);
+  }
+
+  .card {
+    @apply bg-white rounded-lg border border-sage-100 shadow-sm;
+  }
+
+  .card-hover {
+    @apply hover:shadow-md transition-shadow duration-200;
+  }
+
+  .btn-primary {
+    @apply inline-flex items-center justify-center px-6 py-3 bg-sage-600 text-white 
+           font-medium rounded-lg hover:bg-sage-700 transition-colors duration-200;
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center justify-center px-6 py-3 border border-sage-300 text-sage-700 
+           font-medium rounded-lg hover:bg-sage-50 transition-colors duration-200;
+  }
+
+  .btn-ghost {
+    @apply inline-flex items-center justify-center px-4 py-2 text-sage-600 
+           font-medium hover:text-sage-800 transition-colors duration-200;
+  }
+
+  .input-field {
+    @apply w-full px-4 py-3 border border-sage-200 rounded-lg 
+           focus:ring-2 focus:ring-sage-400 focus:border-sage-400 outline-none
+           bg-white text-earth-900 placeholder:text-sage-300;
+  }
+
+  .section-heading {
+    @apply text-2xl sm:text-3xl font-serif text-sage-900 tracking-tight;
+  }
+
+  .badge {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+  }
+
+  .badge-green {
+    @apply badge bg-sage-100 text-sage-800;
+  }
+
+  .badge-amber {
+    @apply badge bg-earth-100 text-earth-800;
+  }
+
+  .badge-blue {
+    @apply badge bg-blue-50 text-blue-700;
+  }
+
+  .stat-card {
+    @apply bg-white rounded-lg border border-sage-100 p-6;
+  }
+
+  .progress-bar {
+    @apply h-2 bg-sage-100 rounded-full overflow-hidden;
+  }
+
+  .progress-fill {
+    @apply h-full bg-sage-500 rounded-full transition-all duration-300;
+  }
+}
