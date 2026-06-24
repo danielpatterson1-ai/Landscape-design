@@ -225,7 +225,7 @@ app.post('/api/renders', authenticate, async (req, res) => {
     let renderStatus = 'completed';
 
     try {
-      const aiServiceUrl = process.env.AI_RENDER_SERVICE_URL || 'http://localhost:8001';
+      const aiServiceUrl = process.env.AI_RENDER_SERVICE_URL || 'http://localhost:3001';
       const response = await fetch(`${aiServiceUrl}/api/render`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -314,7 +314,7 @@ app.post('/api/conversations/:id/messages', authenticate, async (req, res) => {
     let aiResponse = `I'd love to help design your landscape! Based on what you've described, I can suggest plant arrangements, layout options, and create a visual render. Upload a photo of your space and describe the look you're going for!`;
 
     try {
-      const aiChatUrl = process.env.AI_CHAT_SERVICE_URL || 'http://localhost:8001';
+      const aiChatUrl = process.env.AI_CHAT_SERVICE_URL || 'http://localhost:3001';
       const response = await fetch(`${aiChatUrl}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -340,8 +340,21 @@ app.post('/api/conversations/:id/messages', authenticate, async (req, res) => {
 });
 
 // ===========================
-// SUBSCRIPTION
+// SUBSCRIPTION — Stripe Payment Links
 // ===========================
+
+const STRIPE_PAYMENT_LINKS = {
+  starter: 'https://buy.stripe.com/bJedR8aDXf5D4VvdsdGg6EU00',
+  pro: 'https://buy.stripe.com/bJe5kCcM5aPn3Rr1Xy6EU01',
+  unlimited: 'https://buy.stripe.com/fZu7sK27r7DbgEd6dO6EU02'
+};
+
+// Price IDs for webhook verification (stored here for reference)
+const STRIPE_PRICE_IDS = {
+  starter: 'price_1TlRScD50V2rJAeERtPcKlth',
+  pro: 'price_1TlRSdD50V2rJAeE8uroUdJI',
+  unlimited: 'price_1TlRSdD50V2rJAeE4U1uex4o'
+};
 
 app.get('/api/subscription/plans', (req, res) => {
   res.json([
@@ -351,24 +364,104 @@ app.get('/api/subscription/plans', (req, res) => {
   ]);
 });
 
+// Returns the Stripe payment link URL for a given tier
 app.post('/api/subscription/create-checkout', authenticate, async (req, res) => {
   try {
     const { tier } = req.body;
-    if (!tier) return res.status(400).json({ error: 'Tier is required' });
+    if (!tier || !STRIPE_PAYMENT_LINKS[tier]) {
+      return res.status(400).json({ error: 'Valid tier (starter/pro/unlimited) is required' });
+    }
 
+    // Note: In production, create a Checkout Session via Stripe API and return the URL.
+    // For MVP with Payment Links, we return the static link with customer email prefilled.
+    const paymentLink = `${STRIPE_PAYMENT_LINKS[tier]}?prefilled_email=${encodeURIComponent(req.user.email)}`;
+
+    res.json({
+      success: true,
+      paymentLink,
+      tier,
+      message: `Redirecting to Stripe checkout for ${tier} plan`
+    });
+  } catch (err) {
+    console.error('Checkout error:', err);
+    res.status(500).json({ error: 'Failed to create checkout' });
+  }
+});
+
+// Verify a Stripe checkout session and activate the subscription tier.
+// Called after the user returns from Stripe Payment Link with a session_id.
+app.post('/api/subscription/verify', authenticate, async (req, res) => {
+  try {
+    const { sessionId, tier } = req.body;
+    if (!sessionId || !tier) {
+      return res.status(400).json({ error: 'sessionId and tier are required' });
+    }
+
+    // For MVP with Payment Links, we trust the redirect + session_id.
+    // In production, verify the session via Stripe SDK:
+    //   const session = await stripe.checkout.sessions.retrieve(sessionId);
+    //   if (session.payment_status === 'paid') { ... }
+    
+    // Activate the tier
     db(`UPDATE users SET subscription_tier = '${tier}' WHERE id = '${req.user.id}'`);
+    
     const user = db(`SELECT id, email, name, subscription_tier FROM users WHERE id = '${req.user.id}'`)[0];
-    const token = jwt.sign({ id: user.id, email: user.email, name: user.name, tier: user.subscription_tier }, JWT_SECRET, { expiresIn: '30d' });
+    const token = jwt.sign(
+      { id: user.id, email: user.email, name: user.name, tier: user.subscription_tier },
+      JWT_SECRET,
+      { expiresIn: '30d' }
+    );
 
-    res.json({ 
-      success: true, 
+    res.json({
+      success: true,
       message: `Upgraded to ${tier} plan`,
       token,
       user: { id: user.id, email: user.email, name: user.name, subscriptionTier: user.subscription_tier }
     });
   } catch (err) {
-    console.error('Subscription error:', err);
-    res.status(500).json({ error: 'Failed to process subscription' });
+    console.error('Verify error:', err);
+    res.status(500).json({ error: 'Failed to verify subscription' });
+  }
+});
+
+// Stripe webhook endpoint — called by Stripe when subscription events occur.
+// To use: set STRIPE_WEBHOOK_SECRET env var and configure Stripe to POST to /api/stripe/webhook
+app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
+  try {
+    const sig = req.headers['stripe-signature'];
+    if (!sig) {
+      return res.status(400).json({ error: 'Missing stripe-signature header' });
+    }
+
+    // For now, log the event body. Full Stripe SDK verification can be added when API keys are set.
+    const event = req.body;
+    console.log('Stripe webhook received:', event.type);
+
+    // Handle checkout.session.completed event
+    if (event.type === 'checkout.session.completed') {
+      const session = event.data.object;
+      const customerEmail = session.customer_email || session.customer_details?.email;
+      // Map price ID to tier
+      const priceId = session.line_items?.data?.[0]?.price?.id || session.metadata?.priceId;
+      
+      let tier = null;
+      if (priceId) {
+        for (const [t, pid] of Object.entries(STRIPE_PRICE_IDS)) {
+          if (pid === priceId) { tier = t; break; }
+        }
+      }
+      
+      if (tier && customerEmail) {
+        const safeEmail = customerEmail.replace(/'/g, "''");
+        db(`UPDATE users SET subscription_tier = '${tier}' WHERE email = '${safeEmail}'`);
+        console.log(`Upgraded ${customerEmail} to ${tier} via webhook`);
+      }
+    }
+
+    res.json({ received: true });
+  } catch (err) {
+    console.error('Webhook error:', err);
+    res.status(400).json({ error: 'Webhook error' });
   }
 });
 
