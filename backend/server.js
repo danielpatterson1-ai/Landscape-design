@@ -225,7 +225,7 @@ app.post('/api/renders', authenticate, async (req, res) => {
     let renderStatus = 'completed';
 
     try {
-      const aiServiceUrl = process.env.AI_RENDER_SERVICE_URL || 'http://localhost:3001';
+      const aiServiceUrl = process.env.AI_RENDER_SERVICE_URL || 'http://localhost:8001';
       const response = await fetch(`${aiServiceUrl}/api/render`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -314,7 +314,7 @@ app.post('/api/conversations/:id/messages', authenticate, async (req, res) => {
     let aiResponse = `I'd love to help design your landscape! Based on what you've described, I can suggest plant arrangements, layout options, and create a visual render. Upload a photo of your space and describe the look you're going for!`;
 
     try {
-      const aiChatUrl = process.env.AI_CHAT_SERVICE_URL || 'http://localhost:3001';
+      const aiChatUrl = process.env.AI_CHAT_SERVICE_URL || 'http://localhost:8001';
       const response = await fetch(`${aiChatUrl}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
