@@ -34,7 +34,7 @@ export default function DesignChat() {
   const createConversation = async () => {
     const conv = await api('/api/conversations', {
       method: 'POST',
-      body: JSON.stringify({ title: 'New Design' })
+      body: JSON.stringify({ title: 'New Design', photoId: photo?.id || null })
     })
     setConversation(conv)
     navigate(`/design/${conv.id}`, { replace: true })
