@@ -302,8 +302,16 @@ app.post('/api/conversations/:id/messages', authenticate, async (req, res) => {
     const { content } = req.body;
     if (!content) return res.status(400).json({ error: 'Message content is required' });
 
-    const convs = db(`SELECT id FROM conversations WHERE id = '${req.params.id}' AND user_id = '${req.user.id}'`);
+    const convs = db(`SELECT id, photo_id FROM conversations WHERE id = '${req.params.id}' AND user_id = '${req.user.id}'`);
     if (convs.length === 0) return res.status(404).json({ error: 'Conversation not found' });
+
+    // Look up photo URL if conversation has an attached photo
+    let photoUrl = null;
+    const conv = convs[0];
+    if (conv.photo_id) {
+      const photo = db(`SELECT storage_path FROM photos WHERE id = '${conv.photo_id}'`)[0];
+      if (photo) photoUrl = `/${photo.storage_path}`;
+    }
 
     const userMsgId = uuidv4();
     const safeContent = content.replace(/'/g, "''");
@@ -318,7 +326,7 @@ app.post('/api/conversations/:id/messages', authenticate, async (req, res) => {
       const response = await fetch(`${aiChatUrl}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ conversationId: req.params.id, message: content, userId: req.user.id })
+        body: JSON.stringify({ conversationId: req.params.id, message: content, userId: req.user.id, photoUrl })
       });
       if (response.ok) {
         const result = await response.json();
