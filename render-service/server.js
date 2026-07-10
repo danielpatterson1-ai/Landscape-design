@@ -4,6 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
+import OpenAI from 'openai';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -18,46 +19,36 @@ app.use(express.json({ limit: '50mb' }));
 app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')));
 
 // ===========================
+// OpenAI Client
+// ===========================
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY
+});
+
+// System prompt for the AI landscape designer
+const SYSTEM_PROMPT = `You are a friendly and knowledgeable AI landscape design assistant for DIY Garden Design. 
+Your role is to help users design their outdoor spaces by having natural, helpful conversations.
+
+Key behaviors:
+- Always be encouraging and enthusiastic about their space
+- Ask about their yard conditions (sunlight, soil, climate zone) when relevant
+- Suggest specific plants, materials, and layouts based on their preferences
+- Reference the uploaded photo of their yard when one is provided
+- If they mention a photoURL, acknowledge that you can see their space
+- Keep responses conversational but informative (2-4 paragraphs usually)
+- When they describe a style, give specific recommendations
+- Suggest they click "Generate My Design" to see a visual render after they've described their vision
+
+Styles you can help with: cottage garden, modern/minimalist, tropical, desert/xeriscape, Japanese/zen, English country, Mediterranean, woodland, prairie/native, formal, edible/kitchen garden, pollinator-friendly
+
+Plants you can recommend: appropriate for their described conditions and style
+Hardscaping: patios, pathways, decking, pergolas, water features, lighting, fire pits, retaining walls`;
+
+// ===========================
 // AI Chat Handler
 // ===========================
 
-function generateChatResponse(message, conversationId, photoUrl) {
-  // If user uploaded a photo, acknowledge it
-  if (photoUrl) {
-    const lower = message.toLowerCase();
-    if (lower.includes('hello') || lower.includes('hi') || lower.includes('hey')) {
-      return "I can see you've uploaded a photo of your space! That's great. Tell me about your vision — what style are you thinking? Cottage, modern, tropical, or something else? The more you describe, the better I can design it for you.";
-    }
-    if (lower.includes('garden') || lower.includes('plant') || lower.includes('flower')) {
-      return "Looking at your photo, I can see the space has great potential for planting. What kind of plants are you drawn to? Native species, drought-tolerant, or something lush and colorful? Let me know your preferences and I'll suggest a planting plan.";
-    }
-    if (lower.includes('patio') || lower.includes('paving') || lower.includes('deck') || lower.includes('stone')) {
-      return "I can see your yard in the photo. For hardscaping like patios or pathways, consider how you'll use the space — entertaining, quiet retreat, or kid-friendly? Natural stone, pavers, or decking each give a different feel. What's your preference?";
-    }
-    if (lower.includes('modern') || lower.includes('minimal') || lower.includes('contemporary')) {
-      return "Great choice! A modern look would work well with the space in your photo. Think clean lines, architectural plants like grasses or succulents, and maybe some gravel or sleek pavers. Would you like me to suggest a specific layout?";
-    }
-    if (lower.includes('cottage') || lower.includes('english') || lower.includes('romantic') || lower.includes('colorful')) {
-      return "A cottage garden style would look charming in the space from your photo! I'm thinking layered borders with perennials, climbing roses, and a winding path. What's your sun exposure like — is the spot mostly sunny or shaded?";
-    }
-    if (lower.includes('render') || lower.includes('design') || lower.includes('generate') || lower.includes('create')) {
-      return "I'd love to generate a design render for you! Based on the photo you uploaded and what you've described, I'll create a realistic preview. Click the 'Generate My Design' button and I'll work my magic!";
-    }
-    return "I can see the photo of your space. That's a great starting point! Tell me more about what you'd like to do — any particular style, plants, or features you're considering? The more details you share, the more personalized the design will be.";
-  }
-
-  // No photo uploaded yet — generic responses
-  const lower = message.toLowerCase();
-  if (lower.includes('hello') || lower.includes('hi') || lower.includes('hey')) {
-    return "Welcome to DIY Landscape Design! I'm your AI design assistant. To get started, upload a photo of your yard and tell me what you're dreaming of — a cozy garden, modern entertaining space, or something else entirely?";
-  }
-  if (lower.includes('plant') || lower.includes('flower') || lower.includes('tree')) {
-    return "I'd love to help with plant recommendations! Could you upload a photo of your space first? Knowing the light conditions, soil type, and existing layout helps me give you the best advice.";
-  }
-  return "That sounds like a great idea! To help you visualize it, upload a photo of your yard and I'll use it as the canvas for your design. What kind of look are you going for?";
-}
-
-// POST /api/chat
 app.post('/api/chat', async (req, res) => {
   try {
     const { conversationId, message, userId, photoUrl } = req.body;
@@ -65,11 +56,41 @@ app.post('/api/chat', async (req, res) => {
       return res.status(400).json({ error: 'Message is required' });
     }
 
-    const response = generateChatResponse(message, conversationId, photoUrl);
-    res.json({ response });
+    // Build context about the photo if available
+    let photoContext = '';
+    if (photoUrl) {
+      photoContext = `\n\nThe user has uploaded a photo of their yard (available at: ${photoUrl}). Reference this in your response as if you can see their space.`;
+    }
+
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [
+        { role: 'system', content: SYSTEM_PROMPT + photoContext },
+        { role: 'user', content: message }
+      ],
+      max_tokens: 500,
+      temperature: 0.7
+    });
+
+    const aiResponse = response.choices[0]?.message?.content || 
+      "I'd love to help design your landscape! Tell me more about what you're looking for.";
+
+    res.json({ response: aiResponse });
   } catch (err) {
     console.error('Chat error:', err);
-    res.status(500).json({ error: 'Failed to generate response' });
+    
+    // Fallback if OpenAI fails
+    if (err.status === 401) {
+      return res.status(500).json({ 
+        error: 'AI service configuration error',
+        response: "I'm having trouble connecting to my AI brain. Please try again in a moment!"
+      });
+    }
+    
+    res.status(500).json({ 
+      error: 'Failed to generate response',
+      response: "I'm sorry, I couldn't generate a response right now. Please try again!"
+    });
   }
 });
 
@@ -87,7 +108,6 @@ async function generateRender(photoPath, prompt, renderId, userId) {
   return `uploads/renders/${renderId}.txt`;
 }
 
-// POST /api/render
 app.post('/api/render', async (req, res) => {
   try {
     const { photoPath, prompt, renderId, userId } = req.body;
@@ -108,7 +128,12 @@ app.post('/api/render', async (req, res) => {
 // ===========================
 
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', service: 'AI render service', port: PORT });
+  res.json({ 
+    status: 'ok', 
+    service: 'AI render service', 
+    port: PORT,
+    ai: process.env.OPENAI_API_KEY ? 'connected' : 'not configured'
+  });
 });
 
 // ===========================
@@ -117,4 +142,9 @@ app.get('/api/health', (req, res) => {
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`AI Render Service running on http://0.0.0.0:${PORT}`);
+  if (!process.env.OPENAI_API_KEY) {
+    console.warn('WARNING: OPENAI_API_KEY environment variable is not set! Chat will use fallback responses.');
+  } else {
+    console.log('OpenAI API key is configured — using GPT-4o-mini for chat.');
+  }
 });
