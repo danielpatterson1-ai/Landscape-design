@@ -17,6 +17,8 @@ import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { v4 as uuidv4 } from 'uuid';
 import { buildPrompt, getGenerationSettings } from './promptEngine.js';
+import { analyzePhoto, formatAnalysisForPrompt, storeAnalysis, getStoredAnalysis } from './photoAnalysis.js';
+import { compositeImages, createComparisonImage } from './imageCompositor.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -71,7 +73,107 @@ app.use('/renders', express.static(RENDERS_DIR));
 // Health check
 // ---------------------------------------------------------------------------
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', service: 'ai-render-service', version: '1.0.0' });
+  res.json({ status: 'ok', service: 'ai-render-service', version: '2.0.0' });
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/analyze-photo — Analyze a yard photo for site-specific context
+// Request:  { photoPath, userContext }
+// Response: { analysis }
+// ---------------------------------------------------------------------------
+app.post('/api/analyze-photo', (req, res) => {
+  const { photoPath, userContext } = req.body;
+
+  if (!photoPath) {
+    return res.status(400).json({ error: 'photoPath is required' });
+  }
+
+  // Resolve absolute path
+  const absolutePath = path.isAbsolute(photoPath)
+    ? photoPath
+    : path.join(PROJECT_ROOT, photoPath);
+
+  // Check if we already have stored analysis
+  let analysis = getStoredAnalysis(absolutePath);
+
+  if (!analysis) {
+    // Perform analysis
+    analysis = analyzePhoto(absolutePath, userContext || '');
+    // Store for future use
+    storeAnalysis(absolutePath, analysis);
+  }
+
+  // Format as scene description for prompts
+  const sceneDescription = formatAnalysisForPrompt(analysis);
+
+  console.log(`[Analysis] Analyzed photo: ${photoPath} → ${analysis.yardType}, ${analysis.estimatedSize}`);
+
+  res.json({
+    analysis,
+    sceneDescription
+  });
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/composite — Composite render onto original photo
+// Request:  { originalPhotoPath, renderPath, blendOpacity }
+// Response: { outputPath }
+// ---------------------------------------------------------------------------
+app.post('/api/composite', async (req, res) => {
+  try {
+    const { originalPhotoPath, renderPath, blendOpacity } = req.body;
+
+    if (!originalPhotoPath || !renderPath) {
+      return res.status(400).json({ error: 'originalPhotoPath and renderPath are required' });
+    }
+
+    // Resolve absolute paths
+    const resolvePath = (p) => path.isAbsolute(p) ? p : path.join(PROJECT_ROOT, p);
+    const absOriginal = resolvePath(originalPhotoPath);
+    const absRender = resolvePath(renderPath);
+
+    // Run compositing
+    const outputPath = await compositeImages(absOriginal, absRender, {
+      blendOpacity: blendOpacity || 0.85
+    });
+
+    // Return relative path from project root
+    const relativePath = path.relative(PROJECT_ROOT, outputPath);
+    console.log(`[Composite] Created: ${relativePath}`);
+
+    res.json({ outputPath: relativePath });
+  } catch (err) {
+    console.error(`[Composite] Error: ${err.message}`);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/comparison — Create before/after comparison image
+// Request:  { originalPhotoPath, compositedPath }
+// Response: { outputPath }
+// ---------------------------------------------------------------------------
+app.post('/api/comparison', async (req, res) => {
+  try {
+    const { originalPhotoPath, compositedPath } = req.body;
+
+    if (!originalPhotoPath || !compositedPath) {
+      return res.status(400).json({ error: 'originalPhotoPath and compositedPath are required' });
+    }
+
+    const resolvePath = (p) => path.isAbsolute(p) ? p : path.join(PROJECT_ROOT, p);
+    const absOriginal = resolvePath(originalPhotoPath);
+    const absComposite = resolvePath(compositedPath);
+
+    const outputPath = await createComparisonImage(absOriginal, absComposite);
+    const relativePath = path.relative(PROJECT_ROOT, outputPath);
+
+    console.log(`[Comparison] Created: ${relativePath}`);
+    res.json({ outputPath: relativePath });
+  } catch (err) {
+    console.error(`[Comparison] Error: ${err.message}`);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ---------------------------------------------------------------------------
@@ -276,6 +378,9 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`[AI Render Service] Render output directory: ${RENDERS_DIR}`);
   console.log(`[AI Render Service] API endpoints:`);
   console.log(`  POST /api/render         - Generate render (main endpoint)`);
+  console.log(`  POST /api/analyze-photo  - Analyze yard photo for scene context`);
+  console.log(`  POST /api/composite      - Composite render onto original photo`);
+  console.log(`  POST /api/comparison     - Create before/after comparison image`);
   console.log(`  POST /api/chat           - Chat with AI about design`);
   console.log(`  GET  /api/render/:id     - Check render status`);
   console.log(`  GET  /api/pending        - Get next pending render`);
