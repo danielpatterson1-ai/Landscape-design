@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
+import BeforeAfterSlider from '../components/BeforeAfterSlider.jsx'
 
 export default function DesignChat() {
   const { id } = useParams()
@@ -15,6 +16,7 @@ export default function DesignChat() {
   const [uploading, setUploading] = useState(false)
   const [lastRender, setLastRender] = useState(null)
   const [usage, setUsage] = useState(null)
+  const [showBeforeAfter, setShowBeforeAfter] = useState(false)
   const messagesEndRef = useRef(null)
 
   useEffect(() => {
@@ -106,6 +108,7 @@ export default function DesignChat() {
         })
       })
       setLastRender(render)
+      setShowBeforeAfter(true)
       // Refresh usage
       api('/api/usage').then(setUsage).catch(console.error)
     } catch (err) {
@@ -208,10 +211,31 @@ export default function DesignChat() {
               className="w-full py-3 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition">
               🎨 Generate My Design
             </button>
-            {lastRender && (
-              <div className="mt-4 p-4 bg-green-50 rounded-lg">
-                <p className="text-sm text-green-800 font-medium">✨ Render created!</p>
-                <p className="text-xs text-green-600 mt-1">View it in <a href="/renders" className="underline">My Renders</a></p>
+            {lastRender && showBeforeAfter && (
+              <div className="mt-4">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-semibold text-sage-800">3. Before & After</h3>
+                  <button
+                    onClick={() => setShowBeforeAfter(false)}
+                    className="text-xs text-sage-500 hover:text-sage-700 transition"
+                  >
+                    Hide
+                  </button>
+                </div>
+                <BeforeAfterSlider
+                  before={photoPreview}
+                  after={lastRender.rendered_image_path ? `/${lastRender.rendered_image_path}` : null}
+                  beforeLabel="Your Yard"
+                  afterLabel="AI Design"
+                />
+                <div className="mt-3 text-center">
+                  <Link
+                    to="/renders"
+                    className="text-sm text-sage-600 hover:text-sage-800 underline transition"
+                  >
+                    View all renders →
+                  </Link>
+                </div>
               </div>
             )}
           </div>
