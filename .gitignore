@@ -5,4 +5,4 @@ uploads/renders/*
 !uploads/photos/.gitkeep
 !uploads/renders/.gitkeep
 *.log
-.DS_Store
+.DS_Storedata/

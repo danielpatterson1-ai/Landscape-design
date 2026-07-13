@@ -1,0 +1,19 @@
+{
+  "test-cottage-garden": {
+    "id": "test-cottage-garden",
+    "userId": "agent-test",
+    "photoPath": "/test.jpg",
+    "originalPrompt": "I want a charming cottage garden with a winding stone path, white picket fence, overflowing flower beds with roses, lavender, peonies, and foxgloves in pink, purple and white. A climbing hydrangea on a trellis near the entrance. Soft afternoon sunlight.",
+    "enhancedPrompt": "A photorealistic landscape design transformation of a residential outdoor space.\n\nOriginal scene: A cottage backyard with a well-maintained lawn and natural garden space.\n\nUser's requested design: I want a charming cottage garden with a winding stone path, white picket fence, overflowing flower beds with roses, lavender, peonies, and foxgloves in pink, purple and white. A climbing hydrangea on a trellis near the entrance. Soft afternoon sunlight.\n\nDesign implementation: Lush romantic planting, informal clustering, abundant flowers and soft colors. featuring a winding natural stone pathway, attractive screening or fencing, curated garden beds with layered planting, decorative ground cover materials, a garden structure for vertical interest. with rose, lavender, hydrangea as key plantings.\n\nThe result should be a beautifully landscaped outdoor space that looks professionally designed and naturally integrated. The plants should look healthy and established, not freshly planted. Colors should be rich and natural. The lighting should feel natural and inviting.\n\nPhotorealistic quality. Professional garden photography style. Rich natural colors and textures. Depth of field. Well-composed garden view. No cartoon or illustration style. Warm inviting atmosphere. Realistic plant sizes and proportions.",
+    "settings": {
+      "size": "1536x1024",
+      "quality": "high"
+    },
+    "status": "completed",
+    "filename": "render-test-cottage-garden-1783500419291.png",
+    "outputPath": "uploads/renders/render-test-cottage-garden-1783500419291.png",
+    "createdAt": "2026-07-08T08:46:59.291Z",
+    "completedAt": "2026-07-08T08:48:37.904Z",
+    "error": null
+  }
+}

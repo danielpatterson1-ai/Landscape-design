@@ -1,0 +1,22 @@
+{
+  "/uploads/photos/test.jpg": {
+    "analysis": {
+      "yardType": "backyard",
+      "estimatedSize": "small",
+      "features": [
+        "lawn",
+        "fence",
+        "trees"
+      ],
+      "dominantColors": [
+        "green",
+        "brown"
+      ],
+      "lighting": "partial shade",
+      "perspective": "eye-level",
+      "confidence": "low",
+      "source": "metadata"
+    },
+    "analyzedAt": "2026-07-10T22:26:13.638Z"
+  }
+}
