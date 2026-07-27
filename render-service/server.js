@@ -19,12 +19,20 @@ import { v4 as uuidv4 } from 'uuid';
 import { buildPrompt, getGenerationSettings } from './promptEngine.js';
 import { analyzePhoto, formatAnalysisForPrompt, storeAnalysis, getStoredAnalysis } from './photoAnalysis.js';
 import { compositeImages, createComparisonImage } from './imageCompositor.js';
+import OpenAI from 'openai';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = process.env.AI_RENDER_PORT || 8001;
+
+// ---------------------------------------------------------------------------
+// OpenAI Configuration
+// ---------------------------------------------------------------------------
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY
+});
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -63,6 +71,26 @@ function saveRenders(renders) {
 }
 
 // ---------------------------------------------------------------------------
+// Conversation data store
+// ---------------------------------------------------------------------------
+const CONVERSATIONS_META_FILE = path.join(RENDERS_META_DIR, 'conversations.json');
+
+function loadConversations() {
+  try {
+    if (fs.existsSync(CONVERSATIONS_META_FILE)) {
+      return JSON.parse(fs.readFileSync(CONVERSATIONS_META_FILE, 'utf-8'));
+    }
+  } catch (err) {
+    console.error('Error loading conversations data:', err.message);
+  }
+  return {};
+}
+
+function saveConversations(conversations) {
+  fs.writeFileSync(CONVERSATIONS_META_FILE, JSON.stringify(conversations, null, 2));
+}
+
+// ---------------------------------------------------------------------------
 // Middleware
 // ---------------------------------------------------------------------------
 app.use(cors());
@@ -73,7 +101,18 @@ app.use('/renders', express.static(RENDERS_DIR));
 // Health check
 // ---------------------------------------------------------------------------
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', service: 'ai-render-service', version: '2.0.0' });
+  res.json({ status: 'ok', service: 'ai-render-service', version: '2.1.0' });
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/health — OpenAI-connected health check
+// ---------------------------------------------------------------------------
+app.get('/api/health', (req, res) => {
+  const aiConnected = !!process.env.OPENAI_API_KEY && process.env.OPENAI_API_KEY.startsWith('sk-');
+  res.json({
+    status: 'ok',
+    ai: aiConnected ? 'connected' : 'disconnected'
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -237,19 +276,90 @@ app.post('/api/render', (req, res) => {
 // Request:  { conversationId, message, userId }
 // Response: { response }
 // ---------------------------------------------------------------------------
-app.post('/api/chat', (req, res) => {
+app.post('/api/chat', async (req, res) => {
   const { conversationId, message, userId } = req.body;
 
   if (!message || message.trim().length < 2) {
     return res.status(400).json({ error: 'message is required' });
   }
 
-  console.log(`[Chat] Message from user ${userId || 'anonymous'} in conversation ${conversationId || 'new'}: "${message.substring(0, 100)}..."`);
+  const convoId = conversationId || uuidv4();
 
-  // Generate AI response about landscape design
-  const response = generateChatResponse(message, conversationId);
+  console.log(`[Chat] Message from user ${userId || 'anonymous'} in conversation ${convoId}: "${message.substring(0, 100)}..."`);
 
-  res.json({ response });
+  try {
+    // Load or initialize conversation history
+    const conversations = loadConversations();
+    if (!conversations[convoId]) {
+      conversations[convoId] = {
+        id: convoId,
+        userId: userId || null,
+        messages: [
+          {
+            role: 'system',
+            content: `You are a knowledgeable and friendly landscape design assistant for the DIY Garden Design app. 
+Your role is to help users plan their outdoor spaces by:
+- Asking about their yard (size, sunlight, soil type, existing features)
+- Recommending plants suitable for their climate and conditions
+- Suggesting design styles (modern, cottage, tropical, native, xeriscape, etc.)
+- Providing practical advice on layout, spacing, hardscaping, and maintenance
+- Being encouraging and helping them visualize their dream garden
+- Keeping responses concise but informative (2-4 paragraphs max)
+- Never being pushy about spending money — suggest budget-friendly options
+
+When the user is ready to generate a design, guide them to describe what they want clearly so the AI can create the perfect render.`
+          }
+        ],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+    }
+
+    // Add user message to history
+    conversations[convoId].messages.push({
+      role: 'user',
+      content: message
+    });
+    conversations[convoId].updatedAt = new Date().toISOString();
+
+    // Keep last 20 messages for context window management
+    const messagesForApi = conversations[convoId].messages.slice(-20);
+
+    // Call OpenAI
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: messagesForApi,
+      max_tokens: 500,
+      temperature: 0.8
+    });
+
+    const responseText = completion.choices[0]?.message?.content || "I'm sorry, I couldn't generate a response. Please try again.";
+
+    // Add assistant response to history
+    conversations[convoId].messages.push({
+      role: 'assistant',
+      content: responseText
+    });
+    conversations[convoId].updatedAt = new Date().toISOString();
+
+    saveConversations(conversations);
+
+    console.log(`[Chat] Response to ${convoId}: "${responseText.substring(0, 100)}..."`);
+
+    res.json({
+      response: responseText,
+      conversationId: convoId
+    });
+  } catch (err) {
+    console.error(`[Chat] OpenAI error: ${err.message}`);
+    // Fallback: if OpenAI fails, use keyword matching
+    const fallbackResponse = generateFallbackResponse(message);
+    res.json({
+      response: fallbackResponse,
+      conversationId: convoId,
+      fallback: true
+    });
+  }
 });
 
 // ---------------------------------------------------------------------------
@@ -316,9 +426,9 @@ app.get('/api/pending', (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// Chat response generation
+// Fallback chat response generation (used when OpenAI is unavailable)
 // ---------------------------------------------------------------------------
-function generateChatResponse(message, conversationId) {
+function generateFallbackResponse(message, conversationId) {
   const lower = message.toLowerCase();
 
   // Detect design intent and provide helpful responses

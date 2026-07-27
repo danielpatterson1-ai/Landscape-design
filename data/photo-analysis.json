@@ -18,5 +18,21 @@
       "source": "metadata"
     },
     "analyzedAt": "2026-07-10T22:26:13.638Z"
+  },
+  "/home/agent-ai-image-engineer/Landscape-design/test": {
+    "analysis": {
+      "yardType": "backyard",
+      "estimatedSize": "medium",
+      "features": [],
+      "dominantColors": [
+        "green",
+        "brown"
+      ],
+      "lighting": "natural daylight",
+      "perspective": "eye-level",
+      "confidence": "low",
+      "source": "metadata"
+    },
+    "analyzedAt": "2026-07-12T09:47:31.805Z"
   }
 }
